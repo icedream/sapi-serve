@@ -520,6 +520,7 @@ int main(int argc, char **argv)
         long long per =
             3145728LL + (long long)g_max_pcm_bytes + 65536; /* handle + audio buffer + headroom */
         long long usable = lim - (long long)(16ULL << 20U);
+        if (per < 1) per = 1; /* maxsec is user input; never divide by what it can produce */
         long long n = usable > 0 ? usable / per : 1;
         if (n < 1) n = 1;
         if (n > 512) n = 512;
