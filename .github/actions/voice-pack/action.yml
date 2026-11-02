@@ -31,9 +31,15 @@ runs:
         7z x -y -o"$work/cab" "$work/Data.Cab" >/dev/null
         dest=third_party/ms-sam-mike-mary-decomp/data/voice
         mkdir -p "$dest"
-        for want in Sam.SPD Sam.SDF Mike.SPD Mike.SDF Mary.SPD Mary.SDF LTTS1033.LXA r1033tts.LXA; do
-          src=$(find "$work/cab" -iname "*_${want}.*" | head -1)
+        # the cab payload is uppercase-extension, the port opens the files by the names
+        # below, and Linux distinguishes the case: rename while copying
+        for pair in "Sam.SPD:Sam.spd" "Sam.SDF:Sam.sdf" "Mike.SPD:Mike.spd" "Mike.SDF:Mike.sdf" \
+                    "Mary.SPD:Mary.spd" "Mary.SDF:Mary.sdf" \
+                    "ltts1033.lxa:LTTS1033.LXA" "r1033tts.lxa:r1033tts.LXA"; do
+          pat=${pair%%:*}
+          name=${pair##*:}
+          src=$(find "$work/cab" -iname "*_${pat}.*" | head -1)
           test -n "$src"
-          cp "$src" "$dest/$want"
+          cp "$src" "$dest/$name"
         done
         ./tools/check_no_microsoft_files.sh
