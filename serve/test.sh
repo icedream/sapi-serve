@@ -160,7 +160,23 @@ else
     else
         check no yes "speech body is a RIFF/WAVE"
     fi
-    sr=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of csv=p=0 "$tmp/a.wav" 2>/dev/null)
+    # the rate comes out of the fmt chunk rather than ffprobe: the container is ours, and
+    # the CI image has no ffmpeg
+    sr=$(python3 - "$tmp/a.wav" <<'PY'
+import struct, sys
+
+data = open(sys.argv[1], "rb").read(4096)
+i = 12
+while i + 8 <= len(data):
+    cid, size = data[i:i + 4], struct.unpack_from("<I", data, i + 4)[0]
+    if cid == b"fmt ":
+        print(struct.unpack_from("<I", data, i + 12)[0])
+        break
+    i += 8 + size + (size & 1)
+else:
+    print(0)
+PY
+)
     check "$sr" 22050 "sample rate 22050"
 
     n=$(curl -s "$base/v1/models" | grep -o '"base_pitch_hz"' | wc -l)
