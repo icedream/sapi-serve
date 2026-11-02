@@ -27,13 +27,9 @@ jobs:
       - name: Reject tracked Microsoft-owned files
         run: ./tools/check_no_microsoft_files.sh
       - name: Build engine and server
-        run: make -C third_party/ms-sam-mike-mary-decomp && make -C serve
+        run: make server
       - name: Run the data-free suite
-        run: |
-          mkdir -p "$RUNNER_TEMP/no-voice"
-          SAM_DATA_DIR="$RUNNER_TEMP/no-voice" ./serve/sapi_serve 18080 &
-          sleep 1
-          ./serve/test.sh http://localhost:18080
+        run: make test
 
   image:
     name: Publish image

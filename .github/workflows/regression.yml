@@ -26,16 +26,15 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
       - name: Build engine and server
-        run: make -C third_party/ms-sam-mike-mary-decomp && make -C serve
+        run: make server
       - name: Compare against the recorded baseline
         run: |
           ./tools/render_port.sh
           (cd out/port && sha256sum -c ../../tools/port_hashes.txt)
       - name: Run the suite with voices loaded
-        run: |
-          SAM_DATA_DIR=third_party/ms-sam-mike-mary-decomp/data/voice ./serve/sapi_serve 18080 &
-          sleep 1
-          ./serve/test.sh --voice http://localhost:18080
+        env:
+          SAM_DATA_DIR: ${{ github.workspace }}/third_party/ms-sam-mike-mary-decomp/data/voice
+        run: make test-voice
       - name: Reject tracked Microsoft-owned files
         if: always()
         run: ./tools/check_no_microsoft_files.sh
@@ -53,10 +52,10 @@ jobs:
           # absolute: `make -C tools` changes directory, and a relative data dir then
           # points inside tools/
           SAM_DATA_DIR: ${{ github.workspace }}/third_party/ms-sam-mike-mary-decomp/data/voice
+          MAX_TOTAL_TIME: ${{ github.event_name == 'schedule' && 600 || 120 }}
         run: |
           sudo apt-get update && sudo apt-get install -y clang
-          make -C tools
-          make -C tools run MAX_TOTAL_TIME=${{ github.event_name == 'schedule' && 600 || 120 }}
+          make fuzz
 
   sanitizers:
     name: Sanitizers
@@ -74,8 +73,7 @@ jobs:
       - name: Build with sanitizers
         run: |
           san="gcc -fsanitize=address,undefined -fno-omit-frame-pointer -g"
-          make -C third_party/ms-sam-mike-mary-decomp CC="$san"
-          make -C serve CC="$san" LDFLAGS="-fsanitize=address,undefined"
+          make server CC="$san" LDFLAGS="-fsanitize=address,undefined"
       - name: Render the corpus under sanitizers
         env:
           ASAN_OPTIONS: halt_on_error=1:detect_leaks=1

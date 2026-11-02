@@ -26,14 +26,8 @@ jobs:
           submodules: recursive
       - name: Install tooling
         run: sudo apt-get update && sudo apt-get install -y clang-format shellcheck
-      - name: Reject tracked Microsoft-owned files
-        run: ./tools/check_no_microsoft_files.sh
-      - name: Check workflow naming
-        run: ./tools/check_ci_names.sh
-      - name: Check formatting
-        run: make -C serve format-check
-      - name: Shellcheck
-        run: shellcheck serve/test.sh tools/*.sh
+      - name: Run the style gates
+        run: make style
 
   build:
     strategy:
@@ -56,10 +50,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libmicrohttpd-dev libcjson-dev clang-tidy ${{ matrix.cc }}
-      - name: Build the engine
-        run: make -C third_party/ms-sam-mike-mary-decomp
-      - name: Build the server
-        run: make -C serve CC=${{ matrix.cc }}
+      - name: Build engine and server
+        run: make server CC=${{ matrix.cc }}
       - name: Static analysis
         if: matrix.name == 'gcc'
         run: make -C serve tidy
@@ -78,8 +70,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/w:rw" -w /w alpine:3.24 sh -c '
             apk add --no-cache gcc musl-dev pkgconf make libmicrohttpd-dev cjson-dev &&
-            make -C third_party/ms-sam-mike-mary-decomp &&
-            make -C serve &&
+            make server &&
             ./serve/sapi_serve --version'
 
   api:
@@ -93,7 +84,7 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
       - name: Build engine and server
-        run: make -C third_party/ms-sam-mike-mary-decomp && make -C serve
+        run: make server
       # an empty data dir: the engine is never reached, so this job covers routing,
       # framing, error codes and the token rules only
       - name: Start servers with an empty data dir
@@ -117,7 +108,7 @@ jobs:
         with:
           submodules: recursive
       - name: Build the image
-        run: docker build -t sapi-serve:ci .
+        run: make docker DOCKER_TAG=sapi-serve:ci
       - name: Start the container
         run: |
           mkdir -p "$RUNNER_TEMP/no-voice"
