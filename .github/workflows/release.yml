@@ -84,6 +84,13 @@ jobs:
     needs: image
     runs-on: ubuntu-latest
     steps:
+      # cosign and syft read the docker config, and each job gets a fresh runner: without a
+      # login here they ask ghcr for an anonymous pull token, which a private package refuses
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       # keyless: the signature is bound to this workflow's OIDC identity, so verifying it
       # means trusting this repository and this workflow file, not a key someone could copy
       - name: Install cosign
