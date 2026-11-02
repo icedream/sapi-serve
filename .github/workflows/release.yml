@@ -47,7 +47,7 @@ jobs:
       - name: engine commit
         id: engine
         run: echo "sha=$(git ls-tree HEAD third_party/ms-sam-mike-mary-decomp | awk '{print $3}')" >> "$GITHUB_OUTPUT"
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
