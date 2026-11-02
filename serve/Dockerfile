@@ -12,7 +12,11 @@ FROM alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52
 RUN apk add --no-cache gcc make musl-dev pkgconf libmicrohttpd-dev cjson-dev
 COPY third_party/ms-sam-mike-mary-decomp /src/ms
 COPY serve /src/serve
-RUN make -C /src/ms && make -C /src/serve SAM=/src/ms \
+# .git is not in the context, so the version has to come in as a build arg
+ARG VERSION=docker
+ARG ENGINE_COMMIT=unknown
+RUN make -C /src/ms && make -C /src/serve SAM=/src/ms VERSION="$VERSION" \
+      ENGINE_COMMIT="$ENGINE_COMMIT" \
       LDFLAGS="-L/src/ms/build -lsam -lm -Wl,-rpath,/usr/lib"
 
 FROM alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f

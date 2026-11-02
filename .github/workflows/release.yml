@@ -67,6 +67,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            ENGINE_COMMIT=${{ steps.engine.outputs.sha }}
           provenance: mode=max
           sbom: true
       - uses: actions/attest-build-provenance@v2

@@ -89,6 +89,9 @@ Full contract, the applied-value response headers and every error code: [docs/ap
 
 TLS and rate limiting come from the reverse proxy in front of it. The server is HTTP only.
 
+`./serve/sapi_serve --version` prints the server version and the engine commit the binary was
+built against, which is the pair that makes a rendered sample reproducible.
+
 ## Kubernetes
 
 `serve/k8s.yaml` is a Deployment, Service and the voice-pack claim. It runs

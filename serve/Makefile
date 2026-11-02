@@ -8,8 +8,14 @@ PKG   ?= pkg-config
 PKCFGS := $(shell $(PKG) --cflags libmicrohttpd libcjson)
 PKLIBS := $(shell $(PKG) --libs libmicrohttpd libcjson)
 # override += : an inherited CFLAGS must not drop the flags this build depends on
-override CFLAGS += -O2 -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -Wframe-larger-than=32768
+override CFLAGS += -O2 -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -Wframe-larger-than=32768 \
+                   -DSAM_VERSION='"$(VERSION)"' -DSAM_ENGINE_COMMIT='"$(ENGINE_COMMIT)"'
 override LDFLAGS += -L$(SAM)/build -lsam -lm -Wl,-rpath,$(SAM)/build
+
+# stamped into the binary and printed by --version; pass VERSION=... when building from a
+# tree without git
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+ENGINE_COMMIT ?= $(shell git -C $(SAM) rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 SRCS := sapi_serve.c render.c
 OBJS := $(SRCS:.c=.o)

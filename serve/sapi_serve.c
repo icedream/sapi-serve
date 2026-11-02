@@ -45,6 +45,14 @@
 
 #define MAX_BODY ((size_t)512 * 1024) /* compared against size_t lengths, so size_t */
 #define MAX_VOICES 16
+
+/* stamped by the Makefile; a bare cc invocation gets the fallbacks */
+#ifndef SAM_VERSION
+#define SAM_VERSION "dev"
+#endif
+#ifndef SAM_ENGINE_COMMIT
+#define SAM_ENGINE_COMMIT "unknown"
+#endif
 #define LOG(fmt, ...) fprintf(stderr, "[sam] " fmt "\n", ##__VA_ARGS__)
 
 static char g_data_dir[512] = "data/voice";
@@ -481,6 +489,13 @@ static long long cgroup_memory_limit(void)
 
 int main(int argc, char **argv)
 {
+    /* the engine commit belongs in the answer: a rendered sample is only reproducible
+     * with both halves of the build */
+    if (argc > 1 && (!strcmp(argv[1], "--version") || !strcmp(argv[1], "-v"))) {
+        printf("sapi_serve %s  engine %s\n", SAM_VERSION, SAM_ENGINE_COMMIT);
+        return 0;
+    }
+
     env_str("SAM_DATA_DIR", g_data_dir, sizeof g_data_dir);
     if (argc > 1) parse_int("the port argument", argv[1], &g_port);
     env_int("SAM_PORT", &g_port);
@@ -552,6 +567,7 @@ int main(int argc, char **argv)
         LOG("cannot listen on %s:%d", *g_bind ? g_bind : "0.0.0.0", g_port);
         return 1;
     }
+    LOG("sapi_serve %s engine %s", SAM_VERSION, SAM_ENGINE_COMMIT);
     LOG("listening on %s:%d", *g_bind ? g_bind : "0.0.0.0", g_port);
     LOG("ready");
     for (;;)
