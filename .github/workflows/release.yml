@@ -59,7 +59,7 @@ jobs:
             org.opencontainers.image.title=sapi-serve
             org.opencontainers.image.description=HTTP text-to-speech for SAPI 5 voices
             io.github.icedream.sapi-serve.engine=${{ steps.engine.outputs.sha }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         id: build
         with:
           context: .
