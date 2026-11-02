@@ -2,9 +2,6 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "labels": ["dependencies"],
-  "gitSubmodules": {
-    "enabled": false
-  },
   "packageRules": [
     {
       "matchManagers": ["github-actions"],
@@ -21,7 +18,7 @@
     {
       "matchManagers": ["git-submodules"],
       "enabled": false,
-      "description": "The engine pin sits on a branch of a fork that carries a normalizer bounds fix upstream has not merged. A bump to upstream main would remove it. Enable gitSubmodules again once the pin is back on the upstream URL."
+      "description": "The engine pin sits on a branch of a fork that carries a normalizer bounds fix upstream has not merged. A bump to upstream main would remove it. Delete this rule once the pin is back on the upstream URL."
     }
   ],
   "schedule": ["before 6am on Monday"]
