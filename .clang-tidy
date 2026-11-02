@@ -1,0 +1,51 @@
+# clang-tidy for the server. Run with: make -C serve tidy
+#
+# Checks that point at defects; style is clang-format's job. Excluded families:
+#   insecureAPI.*, cert-err33-c     C11 Annex K _s functions are not on glibc or musl, and
+#                                   the bounded calls here already pass their sizes
+#   reserved-identifier, dcl37/dcl51  _GNU_SOURCE is the documented POSIX feature-test macro
+#   modernize C++-flavoured checks   this is C against a C engine API
+#   identifier-length                short loop and parser names are the local style
+#   magic-numbers                    constants come from the file formats and the API
+#   function-cognitive-complexity    small handlers are fine as they are
+#   braces-around-statements         one-line early returns are the idiom here
+#   easily-swappable-parameters      adjacent same-type parameters come from the engine API
+#   include-cleaner, include-cycle   platform headers are not ours to prune
+#
+# Keep notes like these above `Checks:`. Inside the folded scalar they become part of the
+# value, which silently disables the filters below.
+Checks: >
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -clang-analyzer-security.insecureAPI.UncheckedReturn,
+  -cert-err33-c,
+  -bugprone-reserved-identifier,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  -modernize-macro-to-enum,
+  -modernize-avoid-c-arrays,
+  -modernize-use-trailing-return-type,
+  -modernize-deprecated-ios-base-aliases,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-braces-around-statements,
+  -bugprone-easily-swappable-parameters,
+  -misc-include-cleaner,
+  -misc-header-include-cycle,
+  -misc-non-private-member-variables-in-classes
+
+WarningsAsErrors: >
+  bugprone-*,
+  clang-analyzer-*,
+  performance-*
+
+HeaderFilterRegex: 'serve/.*'
+CheckOptions:
+  readability-inconsistent-declaration-parameter-name.Strict: true

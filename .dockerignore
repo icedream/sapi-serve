@@ -1,0 +1,10 @@
+# build artifacts on the host must not enter the image: a COPY would otherwise win over
+# the compile inside the build stage and ship the wrong libc's binary
+serve/sapi_serve
+serve/*.o
+out/
+**/build/
+**/data/voice
+.git
+.github
+docs

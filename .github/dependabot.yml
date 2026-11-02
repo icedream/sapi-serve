@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # a submodule bump can change rendered samples: it must come with a deliberate
+  # re-record of tools/port_hashes.txt, see NOTICE
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+  - package-ecosystem: docker
+    directory: /serve
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

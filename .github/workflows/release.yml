@@ -1,0 +1,99 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
+      - run: ./tools/check_no_microsoft_files.sh
+      - run: make -C third_party/ms-sam-mike-mary-decomp && make -C serve
+      - run: |
+          mkdir -p "$RUNNER_TEMP/no-voice"
+          SAM_DATA_DIR="$RUNNER_TEMP/no-voice" ./serve/sapi_serve 18080 &
+          sleep 1
+          ./serve/test.sh http://localhost:18080
+
+  image:
+    needs: checks
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: engine commit
+        id: engine
+        run: echo "sha=$(git ls-tree HEAD third_party/ms-sam-mike-mary-decomp | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=sapi-serve
+            org.opencontainers.image.description=HTTP text-to-speech for SAPI 5 voices
+            io.github.icedream.sapi-serve.engine=${{ steps.engine.outputs.sha }}
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          file: serve/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  sign:
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # keyless: the signature is bound to this workflow's OIDC identity, so verifying it
+      # means trusting this repository and this workflow file, not a key someone could copy
+      - name: tools
+        run: |
+          curl -sSLo cosign https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64
+          chmod +x cosign && sudo mv cosign /usr/local/bin/
+          curl -sSLo syft.tgz https://github.com/anchore/syft/releases/download/v1.16.0/syft_1.16.0_linux_amd64.tar.gz
+          tar -xzf syft.tgz syft && sudo mv syft /usr/local/bin/
+      - name: sign image
+        run: cosign sign --yes "${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ needs.image.outputs.digest }}"
+      - name: attest and sign the SBOM
+        run: |
+          syft "${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ needs.image.outputs.digest }}" -o spdx-json > sbom.json
+          cosign attest --yes --type spdx --predicate sbom.json \
+            "${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ needs.image.outputs.digest }}"

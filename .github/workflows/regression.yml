@@ -1,0 +1,60 @@
+# Renders the corpus with the port and compares against the hashes in tools/port_hashes.txt.
+# That is a self-consistency gate: it detects an engine or renderer change altering output.
+# Equivalence with audio from a real SAPI install is a separate, manual step
+# (tools/golden_test.sh); a hash cannot express a ±1 LSB tolerance.
+name: regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  port-audio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/voice-pack
+      - run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
+      - run: make -C third_party/ms-sam-mike-mary-decomp && make -C serve
+      - name: compare against the recorded baseline
+        run: |
+          ./tools/render_port.sh
+          (cd out/port && sha256sum -c ../../tools/port_hashes.txt)
+      - name: api suite with voices loaded
+        run: |
+          SAM_DATA_DIR=third_party/ms-sam-mike-mary-decomp/data/voice ./serve/sapi_serve 18080 &
+          sleep 1
+          ./serve/test.sh --voice http://localhost:18080
+      - name: nothing Microsoft-owned entered git
+        if: always()
+        run: ./tools/check_no_microsoft_files.sh
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/voice-pack
+      - run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
+      # the engine parses text it did not choose, so the render path runs under ASan/UBSan
+      # on corpus input. CC carries the flags: the engine Makefile assigns CFLAGS with ?=
+      # and its own -std=c99 would be lost.
+      - name: build with sanitizers
+        run: |
+          san="gcc -fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          make -C third_party/ms-sam-mike-mary-decomp CC="$san"
+          make -C serve CC="$san" LDFLAGS="-fsanitize=address,undefined"
+      - name: render corpus under sanitizers
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./tools/render_port.sh

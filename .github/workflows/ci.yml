@@ -1,0 +1,105 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  TOKEN: ci-test-token
+
+jobs:
+  style:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: sudo apt-get update && sudo apt-get install -y clang-format shellcheck
+      - run: ./tools/check_no_microsoft_files.sh
+      - run: make -C serve format-check
+      - run: shellcheck serve/test.sh tools/*.sh
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc
+            runs-on: ubuntu-latest
+            cc: gcc
+          - name: clang
+            runs-on: ubuntu-latest
+            cc: clang
+          - name: musl
+            runs-on: ubuntu-latest
+            container: { image: alpine:3.22 }
+    runs-on: ${{ matrix.runs-on }}
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: install packages (debian)
+        if: matrix.name != 'musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmicrohttpd-dev libcjson-dev clang-tidy ${{ matrix.cc }}
+      - name: install packages (musl)
+        if: matrix.name == 'musl'
+        run: apk add --no-cache gcc musl-dev pkgconf libmicrohttpd-dev cjson-dev make
+      - run: make -C third_party/ms-sam-mike-mary-decomp
+      - run: make -C serve CC=${{ matrix.cc || 'cc' }}
+      - name: clang-tidy
+        if: matrix.name == 'gcc'
+        run: make -C serve tidy
+
+  api:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
+      - run: make -C third_party/ms-sam-mike-mary-decomp && make -C serve
+      # an empty data dir: the engine is never reached, so these jobs cover routing,
+      # framing, error codes and the token rules only
+      - name: start servers
+        run: |
+          mkdir -p "$RUNNER_TEMP/no-voice"
+          SAM_DATA_DIR="$RUNNER_TEMP/no-voice" ./serve/sapi_serve 18080 &
+          SAM_TOKEN=$TOKEN SAM_BIND=127.0.0.1 SAM_DATA_DIR="$RUNNER_TEMP/no-voice" \
+            ./serve/sapi_serve 18081 &
+          sleep 1
+      - name: data-free suite
+        env:
+          SAM_TEST_TOKEN: ${{ env.TOKEN }}
+        run: ./serve/test.sh http://localhost:18080 http://localhost:18081
+
+  container:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: docker build -f serve/Dockerfile -t sapi-serve:ci .
+      - run: |
+          mkdir -p "$RUNNER_TEMP/no-voice"
+          docker run -d --name srv -p 18080:8080 \
+            -v "$RUNNER_TEMP/no-voice:/voice:ro" sapi-serve:ci
+          sleep 1
+      - run: ./serve/test.sh http://localhost:18080
+      # a COPY of a working tree that happens to contain voice data would pass every
+      # other check here, so the published image is inspected as well
+      - name: image carries no voice data
+        run: |
+          id=$(docker create sapi-serve:ci)
+          if docker export "$id" | tar -t | grep -Ei '\.(spd|sdf|lxa|LXA|wav)$|sapi\.dll|spttseng\.dll'; then
+            echo "the image contains Microsoft-owned files" >&2
+            exit 1
+          fi
