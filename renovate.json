@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "gitSubmodules": {
+    "enabled": false
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "group": {
+        "description": "Action bumps are cosmetic and are all validated by the same two workflows."
+      }
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "pinDigests": true,
+      "description": "The base image is pinned tag plus digest. libmicrohttpd and cJSON come from that distribution, so an update here is a library update, not a cosmetic one."
+    },
+    {
+      "matchManagers": ["git-submodules"],
+      "enabled": false,
+      "description": "The engine pin sits on a branch of a fork that carries a normalizer bounds fix upstream has not merged. A bump to upstream main would remove it. Enable gitSubmodules again once the pin is back on the upstream URL."
+    }
+  ],
+  "schedule": ["before 6am on Monday"]
+}
