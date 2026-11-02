@@ -16,7 +16,14 @@ The engine
 Path:    third_party/ms-sam-mike-mary-decomp
 Upstream: https://github.com/KamiKitsune420/ms-sam-mike-mary-decomp
 License: MIT
-Pinned:  cf1122c6a4b6ad86cb1272690305c71449a17966
+Pinned:  5852cb209407b5beaa9311601be1bb36d1ca72ee
+
+The pin is on the branch `norm-duration-bounds` of a fork, not on upstream: upstream
+`cf1122c` plus one change, bounding the number normalizer's search for a duration
+separator so it stays inside its token. `tools/fuzz_tts.c` reproduces the read past the
+buffer end against `cf1122c`, and is clean against the pin. The corpus renders identically
+under both, so the fix moves no audio. When upstream takes it, move the pin back to the
+upstream URL and drop the fork.
 
 The engine is a reimplementation of Microsoft's SAPI 5 text-to-speech engine written from
 a disassembly and decompilation of `spttseng.dll`, for interoperability. Its code is the
