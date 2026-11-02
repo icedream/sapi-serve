@@ -10,7 +10,6 @@ on:
   pull_request:
   schedule:
     - cron: "17 4 * * 1"
-
 permissions:
   contents: read
 
@@ -36,6 +35,20 @@ jobs:
       - name: nothing Microsoft-owned entered git
         if: always()
         run: ./tools/check_no_microsoft_files.sh
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/voice-pack
+      - name: libFuzzer over the render path
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang
+          make -C tools
+          SAM_DATA_DIR=third_party/ms-sam-mike-mary-decomp/data/voice \
+            make -C tools run MAX_TOTAL_TIME=${{ github.event_name == 'schedule' && 600 || 120 }}
 
   sanitizers:
     runs-on: ubuntu-latest
