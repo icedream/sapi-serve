@@ -1,0 +1,83 @@
+# Renders the corpus with the port and compares against the hashes in tools/port_hashes.txt.
+# That is a self-consistency gate: it detects an engine or renderer change altering output.
+# Equivalence with audio from a real SAPI install is a separate, manual step
+# (tools/golden_test.sh); a hash cannot express a ±1 LSB tolerance.
+name: Regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+permissions:
+  contents: read
+
+jobs:
+  port-audio:
+    name: Audio baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/voice-pack
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
+      - name: Build engine and server
+        run: make -C third_party/ms-sam-mike-mary-decomp && make -C serve
+      - name: Compare against the recorded baseline
+        run: |
+          ./tools/render_port.sh
+          (cd out/port && sha256sum -c ../../tools/port_hashes.txt)
+      - name: Run the suite with voices loaded
+        run: |
+          SAM_DATA_DIR=third_party/ms-sam-mike-mary-decomp/data/voice ./serve/sapi_serve 18080 &
+          sleep 1
+          ./serve/test.sh --voice http://localhost:18080
+      - name: Reject tracked Microsoft-owned files
+        if: always()
+        run: ./tools/check_no_microsoft_files.sh
+
+  fuzz:
+    name: Fuzz the render path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/voice-pack
+      - name: Build and run the fuzzer
+        env:
+          # absolute: `make -C tools` changes directory, and a relative data dir then
+          # points inside tools/
+          SAM_DATA_DIR: ${{ github.workspace }}/third_party/ms-sam-mike-mary-decomp/data/voice
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang
+          make -C tools
+          make -C tools run MAX_TOTAL_TIME=${{ github.event_name == 'schedule' && 600 || 120 }}
+
+  sanitizers:
+    name: Sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/voice-pack
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
+      # the engine parses text it did not choose, so the render path runs under ASan/UBSan
+      # on corpus input. CC carries the flags: the engine Makefile assigns CFLAGS with ?=
+      # and its own -std=c99 would be lost.
+      - name: Build with sanitizers
+        run: |
+          san="gcc -fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          make -C third_party/ms-sam-mike-mary-decomp CC="$san"
+          make -C serve CC="$san" LDFLAGS="-fsanitize=address,undefined"
+      - name: Render the corpus under sanitizers
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./tools/render_port.sh

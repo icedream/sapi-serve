@@ -1,0 +1,76 @@
+# sapi-serve on Kubernetes. Voice data is NOT in the image: the operator supplies
+# Microsoft's Sam.spd / Sam.sdf / LTTS1033.LXA / r1033tts.LXA on a read-only volume
+# (a PVC, or an init container that fetches them from a private artifact store).
+# A Secret is the wrong vehicle: the voice pack is megabytes, and objects are capped at 1 MiB.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sapi-serve
+  labels: { app: sapi-serve }
+spec:
+  replicas: 2
+  # replicas > 1 needs ReadWriteMany for the voice pack: with an RWO volume the copies
+  # contend for one volume on one node. Set replicas: 1, use RWX, or let each node fetch its
+  # own copy through an init container.
+  selector:
+    matchLabels: { app: sapi-serve }
+  template:
+    metadata:
+      labels: { app: sapi-serve }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: sapi
+          image: ghcr.io/icedream/sapi-serve:0.1.0
+          ports: [{ containerPort: 8080, name: http }]
+          env:
+            - { name: SAM_DATA_DIR,    value: /voice }
+            - { name: SAM_MAX_SECONDS, value: "120" }
+            # SAM_MAX_HANDLES unset: the server derives the in-flight cap from its cgroup
+            # memory limit, so this limit is also the concurrency control.
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+          resources:
+            # a render is short and bursty, so CPU requests stay small; memory is what bounds
+            # concurrency through the handle cap
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 192Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: voice, mountPath: /voice, readOnly: true }
+      volumes:
+        - name: voice
+          persistentVolumeClaim:
+            claimName: sapi-voice
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sapi-serve
+spec:
+  selector: { app: sapi-serve }
+  ports: [{ name: http, port: 80, targetPort: 8080 }]
+---
+# Claim it once you have placed the four files on the backing volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sapi-voice
+spec:
+  accessModes: [ReadWriteOnce]
+  # storageClassName deliberately unset so the cluster default applies; pin it if you need a
+  # given provisioner (longhorn offers ReadWriteMany, local-path does not).
+  resources:
+    requests:
+      storage: 64Mi

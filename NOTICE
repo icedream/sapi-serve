@@ -1,0 +1,64 @@
+sapi-serve
+Copyright (c) 2026 Carl Kittelberger. MIT, see LICENSE.
+
+This repository contains no Microsoft-owned files. That is a hard constraint, not a
+preference: `tools/check_no_microsoft_files.sh` fails the build if a `.spd`, `.sdf`,
+`.LXA`, `sapi.dll`, `spttseng.dll` or a rendered `.wav` ever becomes a tracked file.
+
+What is here
+------------
+serve/            the HTTP server (MIT)
+tools/            corpus, comparison and verification tooling (MIT)
+third_party/      the speech engine, carried as a git submodule (see below)
+
+The engine
+----------
+Path:    third_party/ms-sam-mike-mary-decomp
+Upstream: https://github.com/KamiKitsune420/ms-sam-mike-mary-decomp
+License: MIT
+Pinned:  cf1122c6a4b6ad86cb1272690305c71449a17966
+
+The engine is a reimplementation of Microsoft's SAPI 5 text-to-speech engine written from
+a disassembly and decompilation of `spttseng.dll`, for interoperability. Its code is the
+maintainer's, not Microsoft's. It is not "clean room": disassembly was the input, and
+claiming otherwise would misstate the situation. Upstream's own README notes that a few
+small tables (`src/sam_abbrev_tab.h`, `src/sam_pos_rules.h`, `src/sam_words_tab.h`: abbreviations,
+tagger rules, special words) were transcribed from the engine because the program needs them
+to behave the same way. Read its README for what it covers.
+
+Because the engine commit determines the samples that come out, a submodule bump is a
+user-visible change: `.github/workflows/regression.yml` fails until the baseline is
+re-recorded on purpose.
+
+  ./tools/render_port.sh
+  (cd out/port && sha256sum *.wav) > tools/port_hashes.txt
+
+Voice data
+----------
+The `.spd`, `.sdf` and `.LXA` files are Microsoft's, and the server is useless without
+them. They are not distributed here and are not fetched by the build. You supply them from
+Microsoft's own sources:
+
+  Microsoft Speech SDK 5.1, SpeechSDK51.exe
+    https://download.microsoft.com/download/B/4/3/B4314928-7B71-4336-9DE7-6FA4CF00B7B3/SpeechSDK51.exe
+    71,278,472 bytes
+    sha256 826ba6df0d38d29560250dc697a0cb53cd57817db1b39c575ee0f31ba78386ba
+
+  The installer is self-extracting: `7z x SpeechSDK51.exe` yields `Data.Cab`, and `7z x
+  Data.Cab` yields the payload under names like `F366_Sam.SPD.<guid>`. Rename them to
+  `<voice>.spd` / `<voice>.sdf` in the data directory: the scanner matches the extension in
+  lower case, and the file name is the voice name.
+
+  `sam.spd`, `sam.sdf` and `r1033tts.lxa` are the same files in the SDK and in a Windows XP
+  install. `LTTS1033.LXA` is not: the SDK copy is
+  `58c8989b064eea3501b1471a9ee565bed1861daa49b4ebbb1de9a6f038097e19` and XP's is
+  `1c2ae5888acc337add107bae02e45554ffc4e7750ea7c354dedacd0c412ab7f6`. The port ships the SDK
+  lexicon, so a reference corpus for `tools/golden_test.sh` has to use it too.
+
+Your license to Microsoft's speech software is yours to establish. Whether rendering audio
+with these voices is permitted for your use is a question this repository does not answer.
+
+Names
+-----
+"Microsoft Sam", "SAPI" and "Microsoft" are Microsoft's. This project is not affiliated
+with, endorsed by, or sponsored by Microsoft.

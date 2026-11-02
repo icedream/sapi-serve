@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # the base image is pinned by digest and libmicrohttpd/cJSON come from it, so a periodic
+  # rebuild is what shows whether the pin has drifted behind the distribution
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  TOKEN: ci-test-token
+
+jobs:
+  style:
+    name: Style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install tooling
+        run: sudo apt-get update && sudo apt-get install -y clang-format shellcheck
+      - name: Reject tracked Microsoft-owned files
+        run: ./tools/check_no_microsoft_files.sh
+      - name: Check workflow naming
+        run: ./tools/check_ci_names.sh
+      - name: Check formatting
+        run: make -C serve format-check
+      - name: Shellcheck
+        run: shellcheck serve/test.sh tools/*.sh
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc
+            runs-on: ubuntu-latest
+            cc: gcc
+          - name: clang
+            runs-on: ubuntu-latest
+            cc: clang
+    runs-on: ${{ matrix.runs-on }}
+    name: Build (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmicrohttpd-dev libcjson-dev clang-tidy ${{ matrix.cc }}
+      - name: Build the engine
+        run: make -C third_party/ms-sam-mike-mary-decomp
+      - name: Build the server
+        run: make -C serve CC=${{ matrix.cc }}
+      - name: Static analysis
+        if: matrix.name == 'gcc'
+        run: make -C serve tidy
+
+  # built inside Alpine rather than with `container:`, because the checkout and cache
+  # actions need node, which the Alpine image does not carry
+  musl:
+    name: Musl build
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Build inside Alpine
+        run: |
+          docker run --rm -v "$PWD:/w:rw" -w /w alpine:3.24 sh -c '
+            apk add --no-cache gcc musl-dev pkgconf make libmicrohttpd-dev cjson-dev &&
+            make -C third_party/ms-sam-mike-mary-decomp &&
+            make -C serve &&
+            ./serve/sapi_serve --version'
+
+  api:
+    name: API contract
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmicrohttpd-dev libcjson-dev
+      - name: Build engine and server
+        run: make -C third_party/ms-sam-mike-mary-decomp && make -C serve
+      # an empty data dir: the engine is never reached, so this job covers routing,
+      # framing, error codes and the token rules only
+      - name: Start servers with an empty data dir
+        run: |
+          mkdir -p "$RUNNER_TEMP/no-voice"
+          SAM_DATA_DIR="$RUNNER_TEMP/no-voice" ./serve/sapi_serve 18080 &
+          SAM_TOKEN=$TOKEN SAM_BIND=127.0.0.1 SAM_DATA_DIR="$RUNNER_TEMP/no-voice" \
+            ./serve/sapi_serve 18081 &
+          sleep 1
+      - name: Run the data-free suite
+        env:
+          SAM_TEST_TOKEN: ${{ env.TOKEN }}
+        run: ./serve/test.sh http://localhost:18080 http://localhost:18081
+
+  container:
+    name: Container image
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Build the image
+        run: docker build -t sapi-serve:ci .
+      - name: Start the container
+        run: |
+          mkdir -p "$RUNNER_TEMP/no-voice"
+          docker run -d --name srv -p 18080:8080 \
+            -v "$RUNNER_TEMP/no-voice:/voice:ro" sapi-serve:ci
+          sleep 1
+      - name: Run the data-free suite against the container
+        run: ./serve/test.sh http://localhost:18080
+      # a COPY of a working tree that happens to contain voice data would pass every
+      # other check here, so the published image is inspected as well
+      - name: Inspect the image for voice data
+        run: |
+          id=$(docker create sapi-serve:ci)
+          if docker export "$id" | tar -t | grep -Ei '\.(spd|sdf|lxa|LXA|wav)$|sapi\.dll|spttseng\.dll'; then
+            echo "the image contains Microsoft-owned files" >&2
+            exit 1
+          fi

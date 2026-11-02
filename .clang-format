@@ -1,0 +1,25 @@
+# C style for the server. The vendored engine under third_party/ keeps its own style;
+# the Makefile targets never reformat it.
+Language: C
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterControlStatement: Never
+  AfterCaseLabel: false
+  BeforeElse: false
+  BeforeCatch: false
+PointerAlignment: Right
+AlignAfterOpenBracket: Align
+ContinuationIndentWidth: 4
+SpaceBeforeParens: ControlStatements
+IncludeBlocks: Preserve
+# includes stay grouped by origin: C standard, system, third party, project
+SortIncludes: Never

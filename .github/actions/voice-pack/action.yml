@@ -1,0 +1,39 @@
+name: voice-pack
+description: Fetch Microsoft's Speech SDK installer, verify it, and place the voice files in the gitignored data dir.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache the installer
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/sapi-serve/sdk
+        key: sdk-826ba6df0d38d29560250dc697a0cb53cd57817db1b39c575ee0f31ba78386ba
+    - name: Fetch and verify the installer
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.cache/sapi-serve/sdk
+        exe=~/.cache/sapi-serve/sdk/SpeechSDK51.exe
+        [ -f "$exe" ] || curl -sSLo "$exe" \
+          https://download.microsoft.com/download/B/4/3/B4314928-7B71-4336-9DE7-6FA4CF00B7B3/SpeechSDK51.exe
+        test "$(stat -c%s "$exe")" = 71278472
+        echo "826ba6df0d38d29560250dc697a0cb53cd57817db1b39c575ee0f31ba78386ba  $exe" | sha256sum -c -
+    - name: Unpack the voice pack
+      shell: bash
+      # the files are Microsoft's: they go only into the gitignored data dir, and the
+      # tracking guard runs again afterwards
+      run: |
+        set -euo pipefail
+        sudo apt-get update && sudo apt-get install -y p7zip-full
+        work=$(mktemp -d)
+        7z x -y -o"$work" ~/.cache/sapi-serve/sdk/SpeechSDK51.exe >/dev/null
+        7z x -y -o"$work/cab" "$work/Data.Cab" >/dev/null
+        dest=third_party/ms-sam-mike-mary-decomp/data/voice
+        mkdir -p "$dest"
+        for want in Sam.SPD Sam.SDF Mike.SPD Mike.SDF Mary.SPD Mary.SDF LTTS1033.LXA r1033tts.LXA; do
+          src=$(find "$work/cab" -iname "*_${want}.*" | head -1)
+          test -n "$src"
+          cp "$src" "$dest/$want"
+        done
+        ./tools/check_no_microsoft_files.sh
