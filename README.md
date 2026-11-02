@@ -13,8 +13,7 @@ without Windows. The server is a thin C front end over a reimplementation of the
 ```sh
 git clone --recursive https://github.com/icedream/sapi-serve
 cd sapi-serve
-make -C third_party/ms-sam-mike-mary-decomp
-make -C serve
+make                        # the engine, then the server
 
 # put the voice files where the server looks for them
 mkdir -p third_party/ms-sam-mike-mary-decomp/data/voice
@@ -33,6 +32,10 @@ curl -s -o hello.wav -d '{"voice":"Sam","input":"Hello, my name is Microsoft Sam
 
 Requirements: a C compiler, `libmicrohttpd` and `cJSON` (Debian/Ubuntu:
 `apt install libmicrohttpd-dev libcjson-dev`; Alpine: `apk add libmicrohttpd-dev cjson-dev`).
+
+The root Makefile forwards to the rest: `make test` runs the suite with no voice files
+present, `make test-voice` adds the render checks when `SAM_DATA_DIR` points at a voice pack,
+and `make style tidy fuzz docker` are the gates CI runs.
 
 ## Container
 
