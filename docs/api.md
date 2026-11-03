@@ -124,6 +124,9 @@ what was applied:
              "type": "invalid_request_error", "code": "voice_not_found" } }
 ```
 
+`type` is `rate_limit_error` instead of `invalid_request_error` on the 429, and that response also
+carries a `Retry-After: 1` header.
+
 | Status | `code` | When |
 | --- | --- | --- |
 | 400 | `invalid_json` | body did not parse |
@@ -134,9 +137,9 @@ what was applied:
 | 405 | `method_not_allowed` | wrong method for the route |
 | 413 | `payload_too_large` | body over 512 KiB |
 | 413 | `duration_cap` | render longer than `SAM_MAX_SECONDS` |
+| 429 | `busy` | `SAM_MAX_HANDLES` concurrent renders already running |
 | 500 | `engine_open_failed` | voice pair present but unreadable |
 | 500 | `oom` | allocation failed |
-| 503 | `busy` | `SAM_MAX_HANDLES` concurrent renders already running |
 
 ## Determinism
 

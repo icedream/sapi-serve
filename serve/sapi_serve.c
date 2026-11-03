@@ -212,13 +212,15 @@ static enum MHD_Result send_error(struct MHD_Connection *conn, int code, const c
     cJSON *err = cJSON_CreateObject();
     cJSON *inner = cJSON_AddObjectToObject(err, "error");
     cJSON_AddStringToObject(inner, "message", msg);
-    cJSON_AddStringToObject(inner, "type", "invalid_request_error");
+    cJSON_AddStringToObject(inner, "type",
+                            code == 429 ? "rate_limit_error" : "invalid_request_error");
     cJSON_AddStringToObject(inner, "code", code_str);
     char *body = cJSON_PrintUnformatted(err);
     cJSON_Delete(err);
     if (!body) return MHD_NO;
     struct MHD_Response *r = json_response(body, strlen(body), code);
     free(body);
+    if (r && code == 429) MHD_add_response_header(r, "Retry-After", "1");
     return send_response(conn, code, r);
 }
 
@@ -328,7 +330,7 @@ static enum MHD_Result handle_speech(struct MHD_Connection *conn, const char *bo
     int slot = atomic_fetch_add(&g_handles_in_use, 1);
     if (slot >= g_max_handles) {
         atomic_fetch_sub(&g_handles_in_use, 1);
-        return send_error(conn, 503, "busy", "in-flight handle cap reached");
+        return send_error(conn, 429, "busy", "in-flight handle cap reached");
     }
     int rc = render_speech(g_data_dir, &req, &out, &err);
     atomic_fetch_sub(&g_handles_in_use, 1);
