@@ -263,6 +263,29 @@ PY
         check no yes "word timestamps present"
     fi
 
+    # every voice arrives at the rate the server advertises: a voice file declares the rate its units
+    # were recorded at, so labelling without resampling plays it fast and high. Compare against the
+    # port's own CLI by speech duration, since the two may legitimately write different container rates
+    sam_cli=$(dirname "$0")/../third_party/ms-sam-mike-mary-decomp/build/sam
+    if [ -x "$sam_cli" ] && [ -n "$SAM_DATA_DIR" ]; then
+        line="The quick brown fox jumps over the lazy dog."
+        for v in $(curl -s "$base/v1/models" | grep -o '"id":"[A-Za-z0-9]*"' | cut -d'"' -f4 | grep -v '^sapi5-'); do
+            curl -s -o "$tmp/sr_$v.wav" -d "{\"voice\":\"$v\",\"input\":\"$line\"}" "$base/v1/audio/speech"
+            "$sam_cli" --data "$SAM_DATA_DIR" --voice "$v" "$line" "$tmp/cli_$v.wav" >/dev/null 2>&1
+            if python3 - "$tmp/sr_$v.wav" "$tmp/cli_$v.wav" <<'PY'
+import sys, wave
+a, b = wave.open(sys.argv[1]), wave.open(sys.argv[2])
+da, db = a.getnframes() / a.getframerate(), b.getnframes() / b.getframerate()
+sys.exit(0 if a.getframerate() == 22050 and abs(da - db) < 0.02 else 1)
+PY
+            then
+                check yes yes "$v is served at 22050 for the same duration the CLI renders"
+            else
+                check no yes "$v is served at 22050 for the same duration the CLI renders"
+            fi
+        done
+    fi
+
     # determinism: a fresh handle per request must render identical audio, because the
     # engine's accent prominence advances process-global rand() state across speaks
     d1=$(curl -s -o "$tmp/d1.wav" -w '%{http_code}' -d '{"voice":"Sam","input":"Determinism check, one two three."}' "$base/v1/audio/speech")

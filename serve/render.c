@@ -201,6 +201,12 @@ int render_speech(const char *data_dir, const render_req *req, render_out *out, 
         return -1;
     }
 
+    /* The WAV header, X-Sam-Sample-Rate and the capabilities all say 22050, so the vocoder has to
+     * run there too. A voice file declares the rate its units were recorded at, and the rebuilt
+     * Anna voice sits at 16000; leaving it on that timeline under a 22050 header plays it fast and
+     * high. */
+    sam_tts_set_sample_rate(t, SAM_TTS_SAMPLE_RATE);
+
     /* speed and rate are two views of one control: rate is the exponent of the
      * 3^(rate/10) duration divisor, so speed 3.0 is rate 10 and half speed is -10 */
     int rate = req->have_rate ? req->raw_rate : (int)lround(10.0 * log(req->speed) / log(3.0));

@@ -78,9 +78,11 @@ Keys may sit at the top level (the OpenAI shape) or inside `sam` (the extensions
 
 ### Response: WAV
 
-`Content-Type: audio/wav`, 44-byte canonical header, 22050 Hz, 16-bit signed mono PCM. SAPI's
-own files carry an 18-byte `fmt` chunk instead of 16, so tools that compare audio should parse
-the container rather than assume offsets.
+`Content-Type: audio/wav`, 44-byte canonical header, 22050 Hz, 16-bit signed mono PCM. A voice file
+declares the rate its units were recorded at, and one rebuilt from another corpus may sit at 16000; the
+vocoder always runs at 22050 so every voice arrives at one rate. SAPI's own files carry an 18-byte
+`fmt` chunk instead of 16, so tools that compare audio should parse the container rather than assume
+offsets.
 
 ### Response: JSON
 
