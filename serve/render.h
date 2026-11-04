@@ -11,6 +11,7 @@
 
 typedef struct {
     char voice[64];
+    char model[64];
     char input[16384];
     char input_type[32];      /* "text" or "sapi-xml" / "sapi5-xml" */
     char response_format[32]; /* "wav" or "json" */
@@ -54,7 +55,8 @@ typedef struct {
 /* Maps the JSON body onto render_req and applies the documented clamps. `sam` is the
  * vendor-extension object; keys there win over the top-level ones. Returns 0 and fills
  * err when the request is not usable. Voice names are not checked here: the caller owns
- * the voice table. */
+ * the voice table, and so the model-to-voice resolution that happens when no voice is
+ * given. */
 int render_parse(const cJSON *body, const cJSON *sam, render_req *req, render_error *err);
 
 /* Opens a handle, speaks once, closes it. One handle per request is not a shortcut: the

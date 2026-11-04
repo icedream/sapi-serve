@@ -20,14 +20,16 @@ configuration signal, not a transient one.
 
 ## GET /v1/models (alias /v1/voices)
 
-Voices discovered in `SAM_DATA_DIR`, in directory order.
+One entry per voice discovered in `SAM_DATA_DIR`, sorted by name. The id is `sapi5-<name>`, which is
+also the form a request may put in `model` when it has no voice field. With no voice data on disk the
+list is empty.
 
 ```json
 {
   "object": "list",
   "data": [
     {
-      "id": "sam-sapi5",
+      "id": "sapi5-Mike",
       "object": "model",
       "owned_by": "microsoft",
       "voices": [
@@ -60,7 +62,7 @@ Keys may sit at the top level (the OpenAI shape) or inside `sam` (the extensions
 | Field | Type | Default | Range | Notes |
 | --- | --- | --- | --- | --- |
 | `input` | string | required | 16 KiB max | the text to speak |
-| `voice` | string | `Sam` | a name from `/v1/models` | matched case-insensitively, opened by its on-disk name |
+| `voice` | string | none | a name from `/v1/models` | matched case-insensitively, opened by its on-disk name |
 | `speed` | number | `1.0` | 0.33 to 7.22 | clamped, not rejected |
 | `sam.rate` | integer | from `speed` | -10 to 18 | the engine's own control; overrides `speed` |
 | `sam.pitch_semitones` | number | `0` | -5 to 5 | applied in half-semitone steps |
@@ -69,7 +71,7 @@ Keys may sit at the top level (the OpenAI shape) or inside `sam` (the extensions
 | `sam.input_type` | string | `text` | `text`, `sapi-xml`, `sapi5-xml` | XML input is spoken with the engine's XML parser |
 | `sam.response_format` | string | `wav` | `wav`, `json` | |
 | `sam.word_timestamps` | boolean | `false` | | only reported with `response_format: "json"` |
-| `model` | string | ignored | | accepted so OpenAI clients work |
+| `model` | string | none | `sapi5-<voice>`, or a bare voice name | selects the voice only when `voice` is absent; `voice` wins when both are there |
 
 `speed` and `rate` are two views of one control: duration is divided by `3^(rate/10)`, so
 `speed: 3.0` is `rate: 10` and half speed is `rate: -10`.
@@ -131,9 +133,11 @@ carries a `Retry-After: 1` header.
 | --- | --- | --- |
 | 400 | `invalid_json` | body did not parse |
 | 400 | `missing_input` | `input` absent or empty |
+| 400 | `missing_voice` | neither `voice` nor a usable `model` was given |
 | 400 | `speak_failed` | the engine rejected the text or XML |
 | 401 | `unauthorized` | token required and absent or wrong |
 | 404 | `voice_not_found` | name not in `/v1/models` |
+| 404 | `model_not_found` | `model` given alone and it names no voice |
 | 405 | `method_not_allowed` | wrong method for the route |
 | 413 | `payload_too_large` | body over 512 KiB |
 | 413 | `duration_cap` | render longer than `SAM_MAX_SECONDS` |

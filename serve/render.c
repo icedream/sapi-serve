@@ -161,6 +161,7 @@ int render_parse(const cJSON *body, const cJSON *sam, render_req *req, render_er
 {
     str_field(body, sam, "input", req->input, sizeof req->input);
     str_field(body, sam, "voice", req->voice, sizeof req->voice);
+    str_field(body, sam, "model", req->model, sizeof req->model);
     str_field(body, sam, "response_format", req->response_format, sizeof req->response_format);
     str_field(body, sam, "input_type", req->input_type, sizeof req->input_type);
     str_field(body, sam, "effect", req->effect, sizeof req->effect);

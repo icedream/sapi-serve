@@ -61,7 +61,7 @@ Sam-specific controls are accepted at the top level and under `sam`, which wins 
 
 ```json
 {
-  "model": "sam-sapi5",
+  "model": "sapi5-Sam",
   "voice": "sam",
   "input": "Hello, my name is Microsoft Sam.",
   "speed": 1.0,

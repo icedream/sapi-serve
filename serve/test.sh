@@ -28,10 +28,20 @@ check() { if [ "$1" = "$2" ]; then echo "ok      $3"; else echo "FAIL    $3 (got
 # ------------------------------------------------------------------ routing
 code=$(curl -s -o /dev/null -w '%{http_code}' "$base/healthz"); check "$code" 200 "healthz"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$base/v1/models"); check "$code" 200 "models"
-if curl -s "$base/v1/models" | grep -q '"voices"'; then
-    check yes yes "models body carries a voices array"
+if [ "$voice" = 1 ]; then
+    if curl -s "$base/v1/models" | grep -q '"voices"'; then
+        check yes yes "models body carries a voices array"
+    else
+        check no yes "models body carries a voices array"
+    fi
 else
-    check no yes "models body carries a voices array"
+    # One entry per voice, so with no voice data there are no models at all. An engine-wide entry
+    # with an empty voices array would advertise a model nothing can render.
+    if curl -s "$base/v1/models" | grep -q '"data":\[\]'; then
+        check yes yes "models is an empty list without voice data"
+    else
+        check no yes "models is an empty list without voice data"
+    fi
 fi
 
 # /ready reports the startup engine probe: 200 with a usable voice on disk, 503 without one
@@ -46,6 +56,18 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$base/nope");   check "$code" 404
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/healthz");  check "$code" 405 "POST to a GET route is 405"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X GET "$base/v1/audio/speech"); check "$code" 405 "GET to a POST route is 405"
 code=$(curl -s -o /dev/null -w '%{http_code}' -d '{"input":""}' "$base/v1/audio/speech"); check "$code" 400 "empty input is 400"
+
+# The voice has to come from somewhere: `voice`, or a `model` that names one. Guessing a default
+# would turn a typo into audio from a voice nobody chose.
+code=$(curl -s -o /dev/null -w '%{http_code}' -d '{"input":"x"}' "$base/v1/audio/speech")
+check "$code" 400 "neither voice nor model is 400"
+if curl -s -d '{"input":"x"}' "$base/v1/audio/speech" | grep -q '"missing_voice"'; then
+    check yes yes "and the code says missing_voice"
+else
+    check no yes "and the code says missing_voice"
+fi
+code=$(curl -s -o /dev/null -w '%{http_code}' -d '{"model":"sapi5-Nobody","input":"x"}' "$base/v1/audio/speech")
+check "$code" 404 "a model naming no voice is 404"
 
 # ---------------------------------------------------------------- transport
 # Framing: both framings must reach the same route with the same parsed body. A
@@ -192,6 +214,32 @@ PY
 
     code=$(curl -s -o /dev/null -w '%{http_code}' -d '{"voice":"Nobody","input":"x"}' "$base/v1/audio/speech")
     check "$code" 404 "unknown voice is 404"
+
+    # A client whose only selector is a model list names the voice there, in the spelling
+    # /v1/models publishes or as a bare on-disk name.
+    if curl -s -D- -o /dev/null -d '{"model":"sapi5-Mary","input":"Mary by model id."}' "$base/v1/audio/speech" |
+        grep -qi 'X-Sam-Voice: *Mary'; then
+        check yes yes "model sapi5-Mary renders Mary"
+    else
+        check no yes "model sapi5-Mary renders Mary"
+    fi
+    code=$(curl -s -o /dev/null -w '%{http_code}' -d '{"model":"mary","input":"bare name, lower case"}' "$base/v1/audio/speech")
+    check "$code" 200 "a bare voice name in model is accepted"
+
+    # voice wins over model, so a client that sends both cannot be redirected by the id
+    if curl -s -D- -o /dev/null -d '{"voice":"Sam","model":"sapi5-Mary","input":"which one"}' "$base/v1/audio/speech" |
+        grep -qi 'X-Sam-Voice: *Sam'; then
+        check yes yes "voice beats model"
+    else
+        check no yes "voice beats model"
+    fi
+
+    # every published id has to be routable: the id in the list and the parser are one contract
+    ids=$(curl -s "$base/v1/models" | grep -o '"id":"[^"]*"' | cut -d'"' -f4 | grep '^sapi5-')
+    for id in $ids; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' -d "{\"model\":\"$id\",\"input\":\"published id\"}" "$base/v1/audio/speech")
+        check "$code" 200 "published id $id is routable"
+    done
 
     # rate law: +10 is 3x faster, so the audio should be about 3x shorter
     long=$(curl -s -d '{"voice":"Sam","input":"The quick brown fox jumps over the lazy dog.","response_format":"json"}' "$base/v1/audio/speech" | grep -o '"seconds":[0-9.]*' | cut -d: -f2)

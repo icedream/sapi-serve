@@ -117,6 +117,14 @@ static int base_pitch_of(const char *dir, const char *voice)
     return (int)v;
 }
 
+/* readdir hands back whatever order the filesystem holds, which differs between the seed run that
+ * wrote the share and the pod that mounts it. Sorting keeps the published ids and the log line the
+ * same on every start. */
+static int voice_cmp_name(const void *a, const void *b)
+{
+    return strcmp(((const voice_t *)a)->name, ((const voice_t *)b)->name);
+}
+
 static void scan_voices(void)
 {
     DIR *d = opendir(g_data_dir);
@@ -142,6 +150,7 @@ static void scan_voices(void)
         g_voices[g_nvoices].base_pitch = bp;
         g_nvoices++;
     }
+    qsort(g_voices, (size_t)g_nvoices, sizeof g_voices[0], voice_cmp_name);
     closedir(d);
     LOG("voices: %d (%s)", g_nvoices, g_nvoices ? g_voices[0].name : "-");
 }
@@ -159,6 +168,15 @@ static int voice_canonical(const char *v, char *out, size_t outsz)
             return 1;
         }
     return 0;
+}
+
+/* A client whose only selector is a model list puts the voice there instead: "sapi5-Mary", or a
+ * bare "mary". The prefix is the id handle_models publishes, so the two have to stay in step. */
+static int model_to_voice(const char *model, char *out, size_t outsz)
+{
+    const char *rest = model;
+    if (strncasecmp(rest, "sapi5-", 6) == 0) rest += 6;
+    return voice_canonical(rest, out, outsz);
 }
 
 /* ------------------------------------------------------------------- auth */
@@ -234,32 +252,14 @@ static enum MHD_Result send_text(struct MHD_Connection *conn, int code, const ch
 
 /* ---------------------------------------------------------------- capabilities */
 
-static enum MHD_Result handle_models(struct MHD_Connection *conn)
+static cJSON *capabilities_object(void)
 {
     static const char *effects[] = {
         "none",      "hall",      "stadium",   "space",     "room",      "whisper",   "robot",
         "robosoft1", "robosoft2", "robosoft3", "robosoft4", "robosoft5", "robosoft6", "monotone",
     };
 
-    cJSON *root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "object", "list");
-    cJSON *data = cJSON_AddArrayToObject(root, "data");
-
-    cJSON *model = cJSON_CreateObject();
-    cJSON_AddStringToObject(model, "id", "sam-sapi5");
-    cJSON_AddStringToObject(model, "object", "model");
-    cJSON_AddStringToObject(model, "owned_by", "microsoft");
-
-    cJSON *voices = cJSON_AddArrayToObject(model, "voices");
-    for (int i = 0; i < g_nvoices; i++) {
-        cJSON *v = cJSON_CreateObject();
-        cJSON_AddStringToObject(v, "id", g_voices[i].name);
-        cJSON_AddStringToObject(v, "locale", "en-US");
-        cJSON_AddNumberToObject(v, "base_pitch_hz", g_voices[i].base_pitch);
-        cJSON_AddItemToArray(voices, v);
-    }
-
-    cJSON *caps = cJSON_AddObjectToObject(model, "capabilities");
+    cJSON *caps = cJSON_CreateObject();
     cJSON_AddItemToObject(caps, "sample_rates", cJSON_CreateNumber(22050));
     cJSON *fmts = cJSON_AddArrayToObject(caps, "response_formats");
     cJSON_AddItemToArray(fmts, cJSON_CreateString("wav"));
@@ -287,8 +287,39 @@ static enum MHD_Result handle_models(struct MHD_Connection *conn)
     cJSON *eff = cJSON_AddArrayToObject(caps, "effects");
     for (unsigned i = 0; i < sizeof effects / sizeof *effects; i++)
         cJSON_AddItemToArray(eff, cJSON_CreateString(effects[i]));
+    return caps;
+}
 
-    cJSON_AddItemToArray(data, model);
+static enum MHD_Result handle_models(struct MHD_Connection *conn)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "object", "list");
+    cJSON *data = cJSON_AddArrayToObject(root, "data");
+
+    /* One entry per voice. A client that can set `voice` ignores these ids and picks the voice
+     * directly; a client whose only selector is a model list picks one of them, and model_to_voice
+     * turns it back into a voice. There is no engine-wide entry with an empty voice list: with no
+     * voices on disk the list is empty, which is what /ready already says. */
+    cJSON *caps = capabilities_object();
+    for (int i = 0; i < g_nvoices; i++) {
+        char id[80];
+        snprintf(id, sizeof id, "sapi5-%.63s", g_voices[i].name);
+        cJSON *model = cJSON_CreateObject();
+        cJSON_AddStringToObject(model, "id", id);
+        cJSON_AddStringToObject(model, "object", "model");
+        cJSON_AddStringToObject(model, "owned_by", "microsoft");
+
+        cJSON *voices = cJSON_AddArrayToObject(model, "voices");
+        cJSON *v = cJSON_CreateObject();
+        cJSON_AddStringToObject(v, "id", g_voices[i].name);
+        cJSON_AddStringToObject(v, "locale", "en-US");
+        cJSON_AddNumberToObject(v, "base_pitch_hz", g_voices[i].base_pitch);
+        cJSON_AddItemToArray(voices, v);
+
+        cJSON_AddItemToObject(model, "capabilities", cJSON_Duplicate(caps, 1));
+        cJSON_AddItemToArray(data, model);
+    }
+    cJSON_Delete(caps);
 
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -320,6 +351,19 @@ static enum MHD_Result handle_speech(struct MHD_Connection *conn, const char *bo
         return send_error(conn, err.status, err.code, err.message);
     }
     cJSON_Delete(root);
+
+    /* `voice` wins when it is there. Without it the model id names the voice, and a model that
+     * names no voice is a rejection rather than a guess: defaulting would turn a typo into audio
+     * from a voice nobody asked for. */
+    if (!*req.voice) {
+        if (!*req.model)
+            return send_error(conn, 400, "missing_voice", "voice or model is required");
+        if (!model_to_voice(req.model, req.voice, sizeof req.voice)) {
+            char m[160];
+            snprintf(m, sizeof m, "unknown model '%s' (see /v1/models)", req.model);
+            return send_error(conn, 404, "model_not_found", m);
+        }
+    }
 
     if (!voice_canonical(req.voice, req.voice, sizeof req.voice)) {
         char m[160];
