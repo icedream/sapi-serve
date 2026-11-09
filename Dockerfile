@@ -8,7 +8,7 @@
 # HTTP framing comes from libmicrohttpd and JSON from cJSON, both packaged in Alpine.
 # The base is pinned by digest: those libraries arrive through the distribution and inherit
 # its CVEs, so the base has to be diffable.
-FROM alpine:3.24@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d AS build
+FROM alpine:3.24@sha256:0f49f331d9212aff11b932863be4eb01cdf962969aa86dab7d1ee21ac6f5f52b AS build
 RUN apk add --no-cache gcc make musl-dev pkgconf libmicrohttpd-dev cjson-dev
 COPY third_party/ms-sam-mike-mary-decomp /src/ms
 COPY serve /src/serve
@@ -19,7 +19,7 @@ RUN make -C /src/ms && make -C /src/serve SAM=/src/ms VERSION="$VERSION" \
       ENGINE_COMMIT="$ENGINE_COMMIT" \
       LDFLAGS="-L/src/ms/build -lsam -lm -Wl,-rpath,/usr/lib"
 
-FROM alpine:3.24@sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
+FROM alpine:3.24@sha256:0f49f331d9212aff11b932863be4eb01cdf962969aa86dab7d1ee21ac6f5f52b
 RUN apk add --no-cache libgcc libmicrohttpd cjson
 COPY --from=build /src/ms/build/libsam.so /usr/lib/
 COPY --from=build /src/serve/sapi_serve /usr/local/bin/sapi_serve
